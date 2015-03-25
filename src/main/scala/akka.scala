@@ -48,6 +48,6 @@ class MyAkkaActor extends Actor {
 
 }
 
-sealed class Commander
-case class Done extends Commander
-case class Start extends Commander
+sealed  class Commander
+case class Done() extends Commander
+case class Start() extends Commander
