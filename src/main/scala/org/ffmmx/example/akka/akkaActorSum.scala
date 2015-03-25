@@ -13,7 +13,7 @@ object akkaActorSum {
 
   class Sum extends Actor {
     def receive: Receive = {
-      case
+      case _ =>
     }
   }
 }
