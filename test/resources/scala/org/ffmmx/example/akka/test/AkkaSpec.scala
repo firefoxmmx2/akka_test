@@ -20,7 +20,6 @@ object AkkaSpec extends Specification{
       val x= sumActor ? (1,100)
       val y=sumActor ? (101,1000)
       val z=sumActor ? (1001,1000000)
-
       val rstFuture=for{
         a <- x.mapTo[Int]
         b <- x.mapTo[Int]
