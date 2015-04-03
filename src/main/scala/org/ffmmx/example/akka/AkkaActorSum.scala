@@ -1,7 +1,6 @@
 package org.ffmmx.example.akka
 
 import akka.actor.Actor
-import akka.actor.Actor.Receive
 
 object AkkaActorSum {
   def doSum:Long = {
