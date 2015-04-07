@@ -14,10 +14,9 @@ import scala.concurrent.duration._
 /**
  * Created by hooxin on 15-4-3.
  */
-object AkkaSpec extends Specification{
-  this :  NoTimeConversions=>
+object AkkaSpec extends Specification with NoTimeConversions{
   "Akka Actor Sum " should {
-    implicit val timeout = Timeout(5,SECONDS)
+    implicit val timeout = Timeout(5 seconds)
 
     "fork task" in {
       val system=ActorSystem("myActorSystem")
@@ -42,7 +41,7 @@ object AkkaSpec extends Specification{
   }
 
   "Akka Agent" should {
-    implicit val timeout=Timeout(5,SECONDS)
+    implicit val timeout=Timeout(5 seconds)
     "test1" in  {
       AkkaAgent.agentTest
       AkkaAgent.monadic
