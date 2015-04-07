@@ -13,11 +13,13 @@ import scala.concurrent.duration.{FiniteDuration, Duration}
  */
 object AkkaSpec extends Specification{
   "Akka Actor Sum " should {
-    implicit val timeout = Timeout(Duration("5 seconds").toSeconds)
-    val system=ActorSystem("myActorSystem")
+    implicit val timeout = Timeout(Duration("5 seconds").toMillis)
+
     "fork task" in {
+      val system=ActorSystem("myActorSystem")
       println("="*13)
       val sumActor=system.actorOf(props = Props[AkkaActorSum.Sum])
+      println("+"*13)
       val x= sumActor ? (1,100)
       val y=sumActor ? (101,1000)
       val z=sumActor ? (1001,1000000)
@@ -28,9 +30,12 @@ object AkkaSpec extends Specification{
       } yield a+b+c
       val result = Await.result(rstFuture,timeout.duration)
       println("Future result = "+result)
+      system.shutdown()
       (1 to 1000000).sum must be_==(result)
+
     }
-    system.shutdown()
+
+
   }
 
 }
