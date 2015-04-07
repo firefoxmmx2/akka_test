@@ -1,19 +1,23 @@
 package org.ffmmx.example.akka.test
 
+
 import akka.actor.{ActorSystem, Props}
-import akka.util.Timeout
-import org.ffmmx.example.akka.AkkaActorSum
-import org.specs2.mutable.Specification
 import akka.pattern.ask
+import akka.util.Timeout
+import org.ffmmx.example.akka.{AkkaActorSum, AkkaAgent}
+import org.specs2.mutable.Specification
+import org.specs2.time.NoTimeConversions
+
 import scala.concurrent.Await
-import scala.concurrent.duration.{FiniteDuration, Duration}
+import scala.concurrent.duration._
 
 /**
  * Created by hooxin on 15-4-3.
  */
 object AkkaSpec extends Specification{
+  this :  NoTimeConversions=>
   "Akka Actor Sum " should {
-    implicit val timeout = Timeout(Duration("5 seconds").toMillis)
+    implicit val timeout = Timeout(5,SECONDS)
 
     "fork task" in {
       val system=ActorSystem("myActorSystem")
@@ -35,7 +39,16 @@ object AkkaSpec extends Specification{
 
     }
 
+  }
 
+  "Akka Agent" should {
+    implicit val timeout=Timeout(5,SECONDS)
+    "test1" in  {
+      AkkaAgent.agentTest
+      AkkaAgent.monadic
+
+      1 must be_==(1)
+    }
   }
 
 }
