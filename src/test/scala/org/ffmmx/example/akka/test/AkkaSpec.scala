@@ -2,7 +2,7 @@ package org.ffmmx.example.akka.test
 
 
 import akka.actor.{ActorSystem, Props}
-import akka.pattern.ask
+import akka.pattern._
 import akka.util.Timeout
 import org.ffmmx.example.akka.{AkkaActorSum, AkkaAgent}
 import org.specs2.mutable.Specification
