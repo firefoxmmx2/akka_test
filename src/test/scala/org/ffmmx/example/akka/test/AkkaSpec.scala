@@ -84,7 +84,7 @@ object AkkaSpec extends Specification with NoTimeConversions{
       val intBuilder=IntNumberBuilder(10)
       val listOfFuture=List.fill(10)((actor ? intBuilder.next).mapTo[Int])
       val futureList=Future.sequence(listOfFuture)
-      val flr=futureList.map(_.sum).mapTo[Int]
+      val flr=futureList.map(_.sum)
       val rst=Await.result(flr,timeout.duration)
       (1 to 10).map(_ + 1).sum must be_==(rst)
     }
