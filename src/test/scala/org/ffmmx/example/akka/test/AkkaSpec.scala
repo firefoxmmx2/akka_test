@@ -1,8 +1,7 @@
 package org.ffmmx.example.akka.test
 
 
-import akka.actor.Actor.Receive
-import akka.actor.{Actor, ActorSystem, Props}
+import akka.actor._
 import akka.pattern._
 import akka.util.Timeout
 import org.ffmmx.example.akka.{AkkaActorSum, AkkaAgent}
@@ -87,6 +86,18 @@ object AkkaSpec extends Specification with NoTimeConversions{
       val flr=futureList.map(_.sum)
       val rst=Await.result(flr,timeout.duration)
       (1 to 10).map(_ + 1).sum must be_==(rst)
+    }
+  }
+
+  "Akka Actor" should {
+    "DependencyInjector" in {
+      val system = ActorSystem("mySystem")
+      class DependencyInjector(applicationContext:AnyRef,beanName:String) extends IndirectActorProducer {
+        def produce(): Actor = ???
+
+        def actorClass: Class[_ <: Actor] = classOf[Actor]
+      }
+      val actorRef=system.actorOf(Props(classOf[DependencyInjector],system,"hello"),"HelloBean")
     }
   }
 }
