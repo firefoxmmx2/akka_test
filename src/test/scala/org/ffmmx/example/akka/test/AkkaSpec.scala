@@ -1,14 +1,15 @@
 package org.ffmmx.example.akka.test
 
 
-import akka.actor.{ActorSystem, Props}
+import akka.actor.Actor.Receive
+import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern._
 import akka.util.Timeout
 import org.ffmmx.example.akka.{AkkaActorSum, AkkaAgent}
 import org.specs2.mutable.Specification
 import org.specs2.time.NoTimeConversions
 
-import scala.concurrent.Await
+import scala.concurrent.{Future, Await}
 import scala.concurrent.duration._
 
 /**
@@ -50,4 +51,42 @@ object AkkaSpec extends Specification with NoTimeConversions{
     }
   }
 
+  "Akka Future" should {
+    implicit val timeout=Timeout(5 seconds)
+    "sequence and traverse" in {
+      val system=ActorSystem("mysystem")
+      val actor=system.actorOf(Props(new Actor {
+        def receive: Receive = {
+          case s:Int => sender() ! s+1
+          case _ =>
+
+        }
+      }))
+      case class IntNumberBuilder(length:Int){
+        var seq=(1 to length).toList
+
+        def next:Int = {
+          def snext(seqs:List[Int]) :Int = {
+            seqs match {
+              case head :: tails  =>
+                seq = tails
+                head
+              case head :: Nil=>
+                head
+              case Nil =>
+                0
+            }
+          }
+          snext(seq)
+        }
+
+      }
+      val intBuilder=IntNumberBuilder(10)
+      val listOfFuture=List.fill(10)((actor ? intBuilder.next).mapTo[Int])
+      val futureList=Future.sequence(listOfFuture)
+      val flr=futureList.map(_.sum).mapTo[Int]
+      val rst=Await.result(flr,timeout.duration)
+      (1 to 10).map(_ + 1).sum must be_==(rst)
+    }
+  }
 }
