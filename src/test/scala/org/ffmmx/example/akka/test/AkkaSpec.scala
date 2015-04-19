@@ -15,8 +15,8 @@ import scala.concurrent.duration._
  * Created by hooxin on 15-4-3.
  */
 object AkkaSpec extends Specification with NoTimeConversions{
+  implicit val timeout = Timeout(5 seconds)
   "Akka Actor Sum " should {
-    implicit val timeout = Timeout(5 seconds)
 
     "fork task" in {
       val system=ActorSystem("myActorSystem")
@@ -98,6 +98,26 @@ object AkkaSpec extends Specification with NoTimeConversions{
         def actorClass: Class[_ <: Actor] = classOf[Actor]
       }
       val actorRef=system.actorOf(Props(classOf[DependencyInjector],system,"hello"),"HelloBean")
+      1 must be_===(1)
+    }
+  }
+
+  "Future" should {
+    " combo " in {
+      val a=Future {
+        (1 to 100).sum
+      }
+      val b=Future {
+        (1000 to 10000).sum
+      }
+
+      val c = for{
+        x<-a.mapTo[Int]
+        y<-b.mapTo[Int]
+      } yield x + y
+
+      val result=Await.result(c,timeout.duration)
+      (1 to 100).sum + (1000 to 10000).sum must be_===(result)
     }
   }
 }
