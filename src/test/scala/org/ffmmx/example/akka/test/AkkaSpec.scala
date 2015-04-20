@@ -1,6 +1,11 @@
 package org.ffmmx.example.akka.test
 
 
+import java.net.InetSocketAddress
+import java.nio.ByteBuffer
+import java.nio.channels.{SocketChannel, SelectionKey, Selector, ServerSocketChannel}
+import java.nio.charset.Charset
+
 import akka.actor._
 import akka.event.Logging
 import akka.pattern._
@@ -236,6 +241,103 @@ object AkkaSpec extends Specification with NoTimeConversions{
       customer!CaffeineWithdrawalWarning
       barista!ClosingTime
 
+      1 must be_===(1)
+    }
+
+    "Java Nio Socket" in {
+      case class StartService(port:Int)
+      class ServerActor extends Actor {
+        val serverChannel=ServerSocketChannel.open()
+        val serverSocket=serverChannel.socket()
+        val selector= Selector.open()
+
+        val buffer=ByteBuffer.allocate(1024)
+        val charset=Charset.forName("utf8")
+        val charDecoder=charset.newDecoder()
+
+        def serverListenerStart(port:Int)={
+          serverSocket.bind(new InetSocketAddress(port))
+          serverChannel.configureBlocking(false)
+          serverChannel.register(selector,SelectionKey.OP_ACCEPT)
+          var n=0
+          while(true){
+            n=selector.select()
+            if(n>0){
+              val it=selector.selectedKeys().iterator()
+              while(it.hasNext){
+                val key=it.next()
+                it.remove()
+                if(key.isAcceptable){
+                  val server=key.channel().asInstanceOf[ServerSocketChannel]
+                  val channel=server.accept()
+                  println(channel)
+                  if(null != channel){
+                    channel.configureBlocking(false)
+                    channel.register(selector,SelectionKey.OP_READ)
+                  }
+                }
+                else if (key.isReadable){
+                  val socket=key.channel().asInstanceOf[SocketChannel]
+                  var size:Int=0
+                  println("read data .... "+ key)
+                  buffer.clear()
+                  size=socket.read(buffer)
+                  while(size>0){
+                    buffer.flip()
+                    charDecoder.decode(buffer.asReadOnlyBuffer()).toString.split("""\.\.\.""").foreach(println)
+                    buffer.clear()
+                    size=socket.read(buffer)
+
+                  }
+                  if(-1 == size){ //当对端主动关闭后移除key,要不然selector会一直返回可读
+                    socket.close()
+                    selector.selectedKeys().remove(key)
+                  }
+                }
+              }
+            }
+          }
+        }
+        def receive: Actor.Receive = {
+          case StartService(port)=>
+            serverListenerStart(port)
+        }
+      }
+
+      class ClientActor extends Actor {
+        val client=SocketChannel.open()
+        val buffer=ByteBuffer.allocate(1024)
+
+        def clientStart(port:Int) : Unit = {
+          client.connect(new InetSocketAddress(port))
+          while(true){
+            for(i<- 1 to 5){
+              buffer.clear()
+              buffer.put((s"hello server $i ...").getBytes("utf8"))
+              buffer.flip()
+              client.write(buffer)
+            }
+            Thread.sleep(1000)
+            println(System.currentTimeMillis()+"message to parent ...")
+          }
+        }
+        def receive: Actor.Receive = {
+          case StartService(port)=>
+            clientStart(port)
+        }
+      }
+
+      def akkaSocketTest(actorName:String,port:Int) = {
+        val system=ActorSystem(actorName)
+        val serverActor=system.actorOf(Props(new ServerActor),"serverActor")
+        val clientActor=system.actorOf(Props(new ClientActor),"clientActor")
+        val startCMD=new StartService(port)
+
+        serverActor ! startCMD
+        clientActor!startCMD
+      }
+
+      akkaSocketTest("socketActor",11111)
       1 must be_===(1)
     }
   }
