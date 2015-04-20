@@ -2,10 +2,12 @@ package org.ffmmx.example.akka.test
 
 
 import akka.actor._
+import akka.event.Logging
 import akka.pattern._
 import akka.util.Timeout
 import org.ffmmx.example.akka.{AkkaActorSum, AkkaAgent}
 import org.specs2.mutable.Specification
+import org.specs2.reflect.ClassesOf
 import org.specs2.time.NoTimeConversions
 
 import scala.concurrent.{Future, Await}
@@ -98,6 +100,142 @@ object AkkaSpec extends Specification with NoTimeConversions{
         def actorClass: Class[_ <: Actor] = classOf[Actor]
       }
       val actorRef=system.actorOf(Props(classOf[DependencyInjector],system,"hello"),"HelloBean")
+      1 must be_===(1)
+    }
+
+    "Muti Job Sum Task " in {
+      case class HeartBeat(taskid:Int,parent:String)
+      case class TaskFinished(taskid:Int)
+      case object JobFinished
+      case object JobStart
+      case class TaskFailure(taskid:Int)
+      case object TaskMessage
+      case object TaskRestartMessage
+      case object TaskFinishedMessage
+
+      class Parent(jobid:String,tasknum:Int) extends Actor{
+        val log=Logging(this.context.system,this)
+        var tasks = IndexedSeq[ActorRef]()
+        var replySender=this.context.system.deadLetters
+        var count=0
+
+        def receive: Actor.Receive = {
+          case JobStart=>{
+            this.replySender=this.context.sender()
+            tasks=(1 to tasknum) map {
+              id=>
+                val actorRef=this.context.actorOf(Props(new Child(id)))
+                tasks.foreach(actor=>(actor ! TaskMessage))
+                actorRef
+            }
+          }
+          case heartbeat:HeartBeat=>
+            println("taskid-0000"+heartbeat.taskid+",finished:"+
+            heartbeat.parent)
+          case TaskFinished(taskid)=>
+            println("taskid-0000"+taskid+" finished ... ")
+            this.self ! TaskFinishedMessage
+
+          case Terminated(actor)=>
+            println(actor.path.toString+" stop...")
+          case TaskFailure(taskid)=>
+            val restartActor = this.context.actorOf(Props(new Child(tasks.length)))
+            restartActor ! TaskRestartMessage
+          case TaskFinishedMessage=>
+            this.count+=1
+            if(this.count == tasknum){
+              this.replySender ! akka.actor.Status.Success("all task finished")
+              println(this.count)
+            }
+        }
+      }
+
+      class Child(taskid:Int) extends Actor {
+        val log=Logging(this.context.system,this)
+
+        def receive: Actor.Receive = {
+          case TaskMessage=>
+            Thread.sleep(1000)
+            this.context.parent ! HeartBeat(taskid,"10%")
+            Thread.sleep(2000)
+
+            //task failed
+            this.context.stop(this.self)
+            if(taskid%3==0){
+              this.context.parent ! TaskFailure(this.taskid)
+              log.info("taskid = "+taskid+" task failed..")
+            }
+            else {
+              this.context.parent ! TaskFinished(this.taskid)
+            }
+          case TaskRestartMessage=>
+            log.info(taskid+" restart...")
+            this.context.parent ! TaskFinished(this.taskid)
+        }
+      }
+
+      val system = ActorSystem("actorSystem")
+      val jobActor=system.actorOf(Props(new Parent("DataSplitjob",10)),"DataSplitJob")
+      val jobListener=jobActor ? JobStart
+//      jobListener.onComplete {
+//        case Success(result) =>
+//          println("job finished ..., message : "+result)
+//        case Failure(result)=>
+//          println("job failed ... , message : "+result.getMessage)
+//      }
+      jobListener.onSuccess{
+        case result=>
+          println("job finished ..., message : "+result)
+      }
+      jobListener.onFailure{
+        case result=>
+          println("job failed ... , message : "+result.getMessage)
+      }
+
+      1 must be_===(1)
+    }
+
+    "Barista " in {
+      sealed trait CoffeeRequest
+      case object CappuccinoRequest extends CoffeeRequest
+      case object EspressoRequest extends CoffeeRequest
+
+      case class Bill(cents:Int)
+      case object ClosingTime
+      case object CaffeineWithdrawalWarning
+      class Customer(caffeineSource:ActorRef) extends Actor {
+        def receive: Actor.Receive = {
+          case CaffeineWithdrawalWarning=>caffeineSource ! EspressoRequest
+          case Bill(cents)=> println(s"I have to pay $cents cents, or else!")
+        }
+      }
+      class Barista extends Actor {
+        var cappuccinoCount=0
+        var espressoCount=0
+
+        def receive: Actor.Receive = {
+          case CappuccinoRequest =>
+            sender ! Bill(250)
+            cappuccinoCount += 1
+            println("I have to prepare a cappuccino!")
+          case EspressoRequest =>
+            sender ! Bill(200)
+            espressoCount+=1
+            println("Let's prepare on espresso.")
+          case ClosingTime =>
+            context.system.shutdown()
+        }
+      }
+
+      val system=ActorSystem("actorSystem")
+      val barista=system.actorOf(Props(new Barista),"Barista")
+      val customer=system.actorOf(Props(new Customer(barista)),"Customer")
+      barista!CappuccinoRequest
+      barista!EspressoRequest
+      println("I ordered a cappuccino and espresso")
+      customer!CaffeineWithdrawalWarning
+      barista!ClosingTime
+
       1 must be_===(1)
     }
   }
