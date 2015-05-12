@@ -3,7 +3,7 @@ package org.ffmmx.example.akka
 import java.io.File
 
 import akka.actor.Actor.Receive
-import akka.actor.{ReceiveTimeout, Actor, ActorRef, Props}
+import akka.actor._
 import akka.pattern._
 import akka.util.Timeout
 
@@ -106,3 +106,81 @@ trait GathererNode extends Actor {
       context.stop(self)
   }
 }
+
+
+case class SearchableDocument(content:String)
+
+trait AdapativeSearchNode extends Actor with BaseHeadNode with BaseChildNode{
+  def receive: Actor.Receive = leafNode
+
+  protected def split(): Unit = {
+    children = (for(docs<-documents.grouped(5)) yield {
+      val child=context.actorOf(Props[AdapativeSearchNode])
+      docs.foreach(child ! SearchableDocument(_))
+      child
+    }).toIndexedSeq
+    clearIndex()
+    this become parentNode
+  }
+}
+trait BaseHeadNode {
+  self : AdapativeSearchNode =>
+  var children=IndexedSeq[ActorRef]()
+  var currentIdex=0
+  def parentNode:PartialFunction[Any,Unit]={
+    case SearchQuery(q,max,responder) =>
+      val gatherer= context.actorOf(Props(new GathererNode {val client: ActorRef = responder
+        val maxDocs: Int = max
+        val maxResponses: Int = children.size
+        val query: String = q
+      }))
+
+      for(node <- children){
+        node ! SearchQuery(q,max,gatherer)
+      }
+
+    case s @ SearchableDocument(_) => getNextChild ! s
+  }
+  private def getNextChild = {
+    currentIdex=(1+currentIdex) % children.size
+    children(currentIdex)
+  }
+}
+
+trait BaseChildNode{
+  self:AdapativeSearchNode=>
+  final val maxNoOfDocuments=10
+  var documents:Vector[String]=Vector()
+  var index:HashMap[String,Seq[(Double,String)]] = HashMap()
+
+  def leafNode:PartialFunction[Any,Unit]={
+    case SearchQuery(query,maxDocs,handler)=>
+      executeLocalQuery(query,maxDocs,handler)
+    case SearchableDocument(content) =>
+      addDocumentToLocalIndex(content)
+  }
+
+  private def executeLocalQuery(query:String,maxDocs:Int,handler:ActorRef)={
+    val result= for {
+      results <- index.get(query).toList
+      resultList<- results
+    } yield resultList
+    handler!Response(result take maxDocs)
+  }
+
+  private def addDocumentToLocalIndex(content:String)={
+    for ( (key,value) <- content.split("\\s+").groupBy(identity)) {
+      val list=index.get(key).getOrElse(Seq())
+      index += ((key,((value.length.toDouble,content)) +: list))
+    }
+    documents=documents:+content
+    if(documents.size > maxNoOfDocuments) split()
+  }
+
+  protected def split():Unit
+  protected def clearIndex():Unit={
+    documents=Vector()
+    index=HashMap()
+  }
+}
+
