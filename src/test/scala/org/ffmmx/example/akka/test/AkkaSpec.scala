@@ -10,7 +10,7 @@ import akka.actor._
 import akka.event.Logging
 import akka.pattern._
 import akka.util.Timeout
-import org.ffmmx.example.akka.{AkkaActorSum, AkkaAgent}
+import org.ffmmx.example.akka.{AkkaTest, AkkaQuery, AkkaActorSum, AkkaAgent}
 import org.specs2.mutable.Specification
 import org.specs2.reflect.ClassesOf
 import org.specs2.time.NoTimeConversions
@@ -337,8 +337,14 @@ object AkkaSpec extends Specification with NoTimeConversions{
         clientActor!startCMD
       }
 
-      akkaSocketTest("socketActor",11111)
+//      akkaSocketTest("socketActor",11111)
       1 must be_===(1)
+    }
+
+    "akka tell ask send test" in {
+      val rst=AkkaTest.creaete
+
+      rst must be_===(2)
     }
   }
 

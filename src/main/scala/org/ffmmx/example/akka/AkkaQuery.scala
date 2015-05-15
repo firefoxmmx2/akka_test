@@ -2,14 +2,13 @@ package org.ffmmx.example.akka
 
 import java.io.File
 
-import akka.actor.Actor.Receive
 import akka.actor._
 import akka.pattern._
 import akka.util.Timeout
 
 import scala.collection.immutable.HashMap
 import scala.collection.parallel.immutable.ParSeq
-import scala.concurrent.{Future, Await}
+import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.io.Source
 
@@ -22,19 +21,22 @@ case class Document(content: String) {
 
   def query(keyword: String): Seq[Result] = Document.query(this, keyword)
 
-  def subDocument(start:Int,end:Int) = Document(content.substring(start,end))
+  def subDocument(start: Int, end: Int):Document = Document(content.substring(start, end))
 
-  def subDocument(start:Int)=subDocument(start,content.length-start-1)
+  def subDocument(start: Int):Document = subDocument(start, content.length - start - 1)
 }
 
 object Document {
+  implicit val timeout = Timeout(5 seconds)
+
   def fromFile(file: File): Document = Document(Source.fromFile(file).toString())
 
   def query(document: Document, keyword: String): Seq[Result] = {
-    val system=ActorSystem("searchActorSystem")
-    val searchMaster=system.actorOf(Props[SearchMaster])
-    searchMaster ! SearchQuery2(keyword,document,10,_ )
-
+    val system = ActorSystem("searchActorSystem")
+    val searchMaster = system.actorOf(Props[SearchMaster])
+//    val resultfutures = (searchMaster ? SearchQuery2(keyword, document, 10, _)).mapTo[Seq[]]
+//    val results =Await.result(resultfutures, timeout.duration)
+    Seq[Result]()
   }
 }
 
@@ -44,38 +46,46 @@ case class QueryResponse(results: Seq[Result])
 
 case class SearchQuery(keyword: String, max: Int, response: ActorRef)
 
-case class SearchQuery2(keyword: String,document: Document, maxResultsLimit: Int, response: ActorRef)
+case class SearchQuery2(keyword: String, document: Document, maxResultsLimit: Int, response: ActorRef)
 
 case class Response(results: Seq[(Double, String)])
 
 class SearchMaster extends Actor {
   def receive: Actor.Receive = {
-    case SearchQuery2(keyword, docuemnt,maxResultsLimit, _ ) =>
-      val gatherer = context.actorOf(Props(new GathererSlave(keyword, maxResultsLimit,self))).asInstanceOf[GathererSlave]
-      Seq.fill(4) { context.actorOf(Props[SearchSlave])} foreach {_ ! SearchQuery2()}
-
-      sender() ! gatherer.results
+    case SearchQuery2(keyword, docuemnt, maxResultsLimit, _) =>
+      val gatherer = context.actorOf(Props(new GathererSlave(keyword, maxResultsLimit, sender())))
+      Seq.fill(4) {
+        context.actorOf(Props[SearchSlave])
+      } foreach {
+        _ ! SearchQuery2(keyword,docuemnt,maxResultsLimit,gatherer)
+      }
   }
 }
 
-class GathererSlave(keyword: String, maxResultLimit: Int,master:AnyRef) extends Actor {
+class GathererSlave(keyword: String, maxResultLimit: Int, master: ActorRef) extends Actor {
   var results = ParSeq[Result]()
+
   def receive: Actor.Receive = {
-    case QueryResponse(results) =>
-      if(results.size==maxResultLimit) {
+    case QueryResponse(rst) =>
+      results ++= rst
+      if (results.size == maxResultLimit) {
+        master ! results
       }
     case ReceiveTimeout =>
-
+      master ! results
   }
 }
+
 class SearchSlave extends Actor {
   var results = Seq[Result]()
-  var offset=0
+  var offset = 0
+
   def receive: Actor.Receive = {
-    case SearchQuery2(keyword,document,maxResultsLimit,response) =>
-      val offs=document.content.indexOf(keyword)
+    case SearchQuery2(keyword, document, maxResultsLimit, response) =>
+      val offs = document.content.indexOf(keyword)
   }
 }
+
 class SearchNode(id: Int) extends Actor {
   def receive: Receive = {
     case SearchQuery(query, maxDocs, handler) =>
@@ -167,7 +177,7 @@ trait AdapativeSearchNode extends Actor with BaseHeadNode with BaseChildNode {
       child
     }).toIndexedSeq
     clearIndex()
-    this become parentNode
+//    this become parentNode
   }
 }
 
@@ -235,3 +245,35 @@ trait BaseChildNode {
     index = HashMap()
   }
 }
+
+object AkkaTest {
+  implicit val timeout=Timeout(2 seconds)
+  class A extends Actor {
+    def receive: Actor.Receive = {
+      case "start" =>
+      val a=context.actorOf(Props(new B(sender())))
+      a ! 1
+      case "stop" =>
+        context.stop(self)
+    }
+  }
+
+  class B(ref:ActorRef) extends  Actor {
+    def receive: Actor.Receive = {
+      case i:Int =>
+        ref ! i*2
+        sender() ! "stop"
+        context.stop(self)
+    }
+  }
+  def creaete:Int={
+    val system=ActorSystem("msystem")
+    val a =  system.actorOf(Props[A])
+    val resultfuture=(a ? "start").mapTo[Int]
+    val result = Await.result(resultfuture,timeout.duration)
+    system.shutdown()
+    result
+  }
+}
+
+
