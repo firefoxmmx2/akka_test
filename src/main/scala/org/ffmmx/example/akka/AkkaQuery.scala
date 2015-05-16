@@ -19,70 +19,98 @@ object AkkaQuery {
 case class Document(content: String) {
   def length: Int = content.length
 
-  def query(keyword: String): Seq[Result] = Document.query(this, keyword)
+  def query(keyword: String): Seq[Result2] = Document.query(this, keyword)
 
-  def subDocument(start: Int, end: Int):Document = Document(content.substring(start, end))
+  def subDocument(start: Int, end: Int): Document = Document(content.substring(start, end))
 
-  def subDocument(start: Int):Document = subDocument(start, content.length - start - 1)
+  def subDocument(start: Int): Document = subDocument(start, content.length - start - 1)
 }
 
 object Document {
   implicit val timeout = Timeout(5 seconds)
 
-  def fromFile(file: File): Document = Document(Source.fromFile(file).toString())
+  def fromFile(file: File): Document = Document(Source.fromFile(file).mkString)
 
-  def query(document: Document, keyword: String): Seq[Result] = {
+  def query(document: Document, keyword: String): Seq[Result2] = {
     val system = ActorSystem("searchActorSystem")
     val searchMaster = system.actorOf(Props[SearchMaster])
-//    val resultfutures = (searchMaster ? SearchQuery2(keyword, document, 10, _)).mapTo[Seq[]]
-//    val results =Await.result(resultfutures, timeout.duration)
-    Seq[Result]()
+    val resultfutures = (searchMaster ? SearchQuery2(keyword, document, 4, searchMaster,0)).mapTo[Seq[Result2]]
+    val results = Await.result(resultfutures, timeout.duration)
+    system.shutdown()
+    results
   }
 }
 
 case class Result(keywords: String, line: Int, column: Int, offset: Int)
 
-case class QueryResponse(results: Seq[Result])
+case class Result2(keywords:String, offset:Int)
+
+case class QueryResponse(results: Seq[Result2])
 
 case class SearchQuery(keyword: String, max: Int, response: ActorRef)
 
-case class SearchQuery2(keyword: String, document: Document, maxResultsLimit: Int, response: ActorRef)
+case class SearchQuery2(keyword: String, document: Document, maxResultsLimit: Int, response: ActorRef,offset:Int)
 
 case class Response(results: Seq[(Double, String)])
 
 class SearchMaster extends Actor {
   def receive: Actor.Receive = {
-    case SearchQuery2(keyword, docuemnt, maxResultsLimit, _) =>
-      val gatherer = context.actorOf(Props(new GathererSlave(keyword, maxResultsLimit, sender())))
-      Seq.fill(4) {
+    case SearchQuery2(keyword, docuemnt, maxResultsLimit, ref, offsetp) =>
+      val client = sender()
+      val gatherer = context.actorOf(Props(new GathererSlave(keyword, maxResultsLimit, client)))
+      val searchslavenum=4
+      var offset=0
+      Seq.fill(searchslavenum) {
         context.actorOf(Props[SearchSlave])
       } foreach {
-        _ ! SearchQuery2(keyword,docuemnt,maxResultsLimit,gatherer)
+        val docpart=docuemnt.subDocument(offset,offset+docuemnt.length/searchslavenum)
+        offset+=docpart.length
+        _ ! SearchQuery2(keyword, docpart, maxResultsLimit, gatherer,offset)
       }
   }
 }
 
 class GathererSlave(keyword: String, maxResultLimit: Int, master: ActorRef) extends Actor {
-  var results = ParSeq[Result]()
-
+  var results = ParSeq[Result2]()
+  var resultResponses = 0
   def receive: Actor.Receive = {
     case QueryResponse(rst) =>
-      results ++= rst
-      if (results.size == maxResultLimit) {
-        master ! results
+      results ++= rst.par
+      resultResponses+=1
+      println("="*13+"results.size = "+results.size+"="*13)
+      if (resultResponses == maxResultLimit) {
+        master ! results.seq
+        context.stop(self)
       }
     case ReceiveTimeout =>
-      master ! results
+      master ! results.seq
+      context.stop(self)
   }
 }
 
 class SearchSlave extends Actor {
-  var results = Seq[Result]()
+  var results = Seq[Result2]()
   var offset = 0
 
   def receive: Actor.Receive = {
-    case SearchQuery2(keyword, document, maxResultsLimit, response) =>
-      val offs = document.content.indexOf(keyword)
+    case SearchQuery2(keyword, document, maxResultsLimit, master,offsetPrefix) =>
+//      println("="*13+"document.content = "+document.content+"="*13)
+      val position = document.content.indexOf(keyword)
+      println("="*13+"position = "+position+"="*13)
+      if(position == -1){
+        master ! QueryResponse(results)
+        context.stop(self)
+    }
+      else{
+        val offset = document.content.substring(0,position).length
+        results ++= Seq(Result2(keyword,offset+offsetPrefix))
+        val  docpart=document.subDocument(position+keyword.length,document.length)
+        self ! SearchQuery2(keyword,docpart,maxResultsLimit,master,offsetPrefix+offset)
+      }
+
+    case ReceiveTimeout=>
+      context.stop(self)
+
   }
 }
 
@@ -177,7 +205,7 @@ trait AdapativeSearchNode extends Actor with BaseHeadNode with BaseChildNode {
       child
     }).toIndexedSeq
     clearIndex()
-//    this become parentNode
+    //    this become parentNode
   }
 }
 
@@ -247,30 +275,33 @@ trait BaseChildNode {
 }
 
 object AkkaTest {
-  implicit val timeout=Timeout(2 seconds)
+  implicit val timeout = Timeout(2 seconds)
+
   class A extends Actor {
     def receive: Actor.Receive = {
       case "start" =>
-      val a=context.actorOf(Props(new B(sender())))
-      a ! 1
+        val client = sender()
+        val a = context.actorOf(Props(new B(client)))
+        a ! 1
       case "stop" =>
         context.stop(self)
     }
   }
 
-  class B(ref:ActorRef) extends  Actor {
+  class B(ref: ActorRef) extends Actor {
     def receive: Actor.Receive = {
-      case i:Int =>
-        ref ! i*2
+      case i: Int =>
+        ref ! i * 2
         sender() ! "stop"
         context.stop(self)
     }
   }
-  def creaete:Int={
-    val system=ActorSystem("msystem")
-    val a =  system.actorOf(Props[A])
-    val resultfuture=(a ? "start").mapTo[Int]
-    val result = Await.result(resultfuture,timeout.duration)
+
+  def creaete: Int = {
+    val system = ActorSystem("msystem")
+    val a = system.actorOf(Props[A])
+    val resultfuture = (a ? "start").mapTo[Int]
+    val result = Await.result(resultfuture, timeout.duration)
     system.shutdown()
     result
   }

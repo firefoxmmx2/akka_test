@@ -1,6 +1,7 @@
 package org.ffmmx.example.akka.test
 
 
+import java.io.File
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.{SocketChannel, SelectionKey, Selector, ServerSocketChannel}
@@ -10,7 +11,7 @@ import akka.actor._
 import akka.event.Logging
 import akka.pattern._
 import akka.util.Timeout
-import org.ffmmx.example.akka.{AkkaTest, AkkaQuery, AkkaActorSum, AkkaAgent}
+import org.ffmmx.example.akka._
 import org.specs2.mutable.Specification
 import org.specs2.reflect.ClassesOf
 import org.specs2.time.NoTimeConversions
@@ -345,6 +346,9 @@ object AkkaSpec extends Specification with NoTimeConversions{
       val rst=AkkaTest.creaete
 
       rst must be_===(2)
+      val document=Document.fromFile(new File("/home/hooxin/新文件"))
+      val results=document.query("0")
+      results.size must be_===(20)
     }
   }
 
